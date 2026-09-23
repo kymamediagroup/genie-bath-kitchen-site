@@ -1,0 +1,31 @@
+[[redirects]]
+  from = "/api/webhooks/leads"
+  to = "https://kaos-genie.com/api/webhooks/leads?token=wh_7HZviHLugPEbCNc4oQTOqiPDApjSFD9Y"
+  status = 200
+  force = true
+
+[[headers]]
+  for = "/assets/frames/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/assets/frames-portrait/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/assets/fonts/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/assets/video/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"

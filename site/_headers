@@ -1,0 +1,11 @@
+/assets/frames/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/frames-portrait/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/video/*
+  Cache-Control: public, max-age=31536000, immutable
