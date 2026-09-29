@@ -25,9 +25,13 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
+    # Force IPv4 DNS resolution for upstream proxying on Cloud Run (avoids IPv6 connection timeouts)
+    resolver 8.8.8.8 8.8.4.4 valid=30s ipv6=off;
+
     # Reverse proxy lead webhooks upstream to avoid browser CORS issues
     location /api/webhooks/leads {
-        proxy_pass https://kaos-genie.com;
+        set $upstream_endpoint https://kaos-genie.com;
+        proxy_pass $upstream_endpoint;
         proxy_ssl_server_name on;
         proxy_set_header Host kaos-genie.com;
         proxy_set_header X-Real-IP $remote_addr;
