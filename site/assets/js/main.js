@@ -281,8 +281,12 @@ gsap.from(".footer-cta > *", {
 
 /* ——————————————————— sticky lead form & Lead Ingestion Webhook ——————————————————— */
 const WEBHOOK_TOKEN = "wh_7HZviHLugPEbCNc4oQTOqiPDApjSFD9Y";
-const DIRECT_WEBHOOK_URL = `https://kaos-genie.com/api/webhooks/leads?token=${WEBHOOK_TOKEN}`;
-const PROXY_WEBHOOK_URL = `/api/webhooks/leads?token=${WEBHOOK_TOKEN}`;
+const WEBHOOK_ENDPOINTS = [
+  `/api/webhooks/leads?token=${WEBHOOK_TOKEN}`,
+  `https://kaos-genie.com/api/webhooks/leads?token=${WEBHOOK_TOKEN}`,
+  `https://www.kaos-genie.com/api/webhooks/leads?token=${WEBHOOK_TOKEN}`,
+  `https://genie-home-solutions-133626705316.us-west1.run.app/api/webhooks/leads?token=${WEBHOOK_TOKEN}`
+];
 
 const lead = document.getElementById("lead");
 const leadToggle = document.getElementById("leadToggle");
@@ -567,52 +571,45 @@ async function sendLeadWebhook(payload) {
   let delivered = false;
   let responseData = null;
 
-  // 1. Try local/host proxy route first (completely avoids CORS issues)
-  try {
-    const proxyResp = await fetch(PROXY_WEBHOOK_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: jsonBody
-    });
-    if (proxyResp.ok) {
-      responseData = await proxyResp.json().catch(() => ({ success: true }));
-      delivered = true;
-    }
-  } catch (proxyErr) {
-    console.info("Notice: Proxy route not available, attempting direct endpoint...", proxyErr);
-  }
-
-  // 2. If proxy was not reachable, try direct endpoint
-  if (!delivered) {
+  // Try endpoints sequentially (proxy first for CORS safety, then direct canonicals)
+  for (const url of WEBHOOK_ENDPOINTS) {
     try {
-      const directResp = await fetch(DIRECT_WEBHOOK_URL, {
+      const resp = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${WEBHOOK_TOKEN}`
+        },
         body: jsonBody
       });
-      if (directResp.ok) {
-        responseData = await directResp.json().catch(() => ({ success: true }));
+      if (resp.ok) {
+        responseData = await resp.json().catch(() => ({ success: true }));
         delivered = true;
+        console.info(`[Lead Ingestion] Successfully delivered lead via ${url}`, responseData);
+        break;
+      } else {
+        console.warn(`[Lead Ingestion] Endpoint ${url} returned status ${resp.status}`);
       }
-    } catch (directErr) {
-      console.warn("Direct webhook fetch encountered browser/CORS barrier:", directErr);
+    } catch (err) {
+      console.info(`[Lead Ingestion] Endpoint ${url} bypassed or unreachable:`, err.message || err);
     }
   }
 
-  // 3. Always store locally in localStorage as reliable audit log / backup
+  // Always store locally in localStorage as a resilient audit log & backup
   try {
     const localAll = JSON.parse(localStorage.getItem("genieLeads") || "[]");
     localAll.push({
       ...payload,
       deliveredAt: new Date().toISOString(),
-      delivered: delivered
+      delivered: delivered,
+      responseId: responseData?.id || null
     });
     localStorage.setItem("genieLeads", JSON.stringify(localAll));
   } catch (storageErr) {
     console.error("Local storage error:", storageErr);
   }
 
-  return { success: true, delivered, data: responseData };
+  return { success: delivered, delivered, data: responseData };
 }
 
 leadForm.addEventListener("submit", async e => {
@@ -635,11 +632,12 @@ leadForm.addEventListener("submit", async e => {
   const noteParts = [];
   if (selectedColor) noteParts.push(`Selected WishStone Stone Color: ${selectedColor}`);
   noteParts.push("Consultation request via Genie Bath & Kitchen website.");
+  noteParts.push(`Consent: Authorized call/text at ${phone} on ${new Date().toLocaleString()}`);
 
   // Build exact Lead Ingestion API payload
-  // Ensuring Source is strictly "Website"
+  // Ensuring Source is strictly "Website" per Kaos Genie documentation
   const leadPayload = {
-    id: `web-${Date.now()}`,
+    id: `web-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     name: `${first} ${last}`.trim(),
     email: email,
     phone: phone,
@@ -650,7 +648,12 @@ leadForm.addEventListener("submit", async e => {
   };
 
   try {
-    await sendLeadWebhook(leadPayload);
+    const result = await sendLeadWebhook(leadPayload);
+
+    // If neither network endpoint succeeded, throw so fallback warning displays to customer
+    if (!result.delivered) {
+      throw new Error("Unable to deliver lead to server. Consultation saved locally.");
+    }
 
     // Populate summary of submitted wish
     if (leadSummaryBox) {
