@@ -30,9 +30,11 @@ is 12.7 MB — under every common static-host per-file limit.
 
 ## Deploying
 
-Any static host works: Netlify, Vercel, Cloudflare Pages, S3+CloudFront, or the
+Any static host works: Netlify, Vercel, Cloudflare Pages, S3+CloudFront, Google Cloud Run, or the
 current Higgsfield hosting. Upload the **contents of `site/`** so `index.html` sits
 at the domain root. There is nothing to build, install, or configure.
+
+For **Google Cloud Run**, the repository includes a containerized `Dockerfile` and `nginx.conf.template` that serves the site with full Range-request support, WebP MIME types, and webhook proxying on `$PORT`.
 
 Local preview & Verification:
 
