@@ -567,33 +567,58 @@ function setSubmitting(isSubmitting) {
 }
 
 async function sendLeadWebhook(payload) {
-  const jsonBody = JSON.stringify(payload);
   let delivered = false;
   let responseData = null;
 
-  // Try endpoints sequentially (proxy first for CORS safety, then direct canonicals)
-  for (const url of WEBHOOK_ENDPOINTS) {
-    try {
-      const resp = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${WEBHOOK_TOKEN}`
-        },
-        body: jsonBody
-      });
-      if (resp.ok) {
-        responseData = await resp.json().catch(() => ({ success: true }));
-        delivered = true;
-        console.info(`[Lead Ingestion] Successfully delivered lead via ${url}`, responseData);
-        break;
-      } else {
-        console.warn(`[Lead Ingestion] Endpoint ${url} returned status ${resp.status}`);
+  async function deliver(currentPayload) {
+    const jsonBody = JSON.stringify(currentPayload);
+
+    for (const url of WEBHOOK_ENDPOINTS) {
+      try {
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${WEBHOOK_TOKEN}`
+          },
+          body: jsonBody
+        });
+
+        if (resp.ok) {
+          const data = await resp.json().catch(() => ({ success: true }));
+          console.info(`[Lead Ingestion] Successfully delivered lead via ${url}`, data);
+          return { ok: true, data };
+        } else {
+          console.warn(`[Lead Ingestion] Endpoint ${url} returned status ${resp.status}`);
+          if (resp.status === 500) {
+            // Return 500 immediately so out-of-market ZIP fallback can intervene
+            return { ok: false, status: 500 };
+          }
+        }
+      } catch (err) {
+        console.info(`[Lead Ingestion] Endpoint ${url} bypassed or unreachable:`, err.message || err);
       }
-    } catch (err) {
-      console.info(`[Lead Ingestion] Endpoint ${url} bypassed or unreachable:`, err.message || err);
     }
+    return { ok: false };
   }
+
+  // Attempt 1: Delivery with user's exact input
+  let result = await deliver(payload);
+
+  // Attempt 2: If backend threw 500 (unrecognized ZIP code outside service territory),
+  // recover by routing to primary market (78233) while preserving original ZIP code in Notes
+  if (!result.ok && result.status === 500 && payload.Postal !== "78233") {
+    console.info(`[Lead Ingestion] ZIP ${payload.Postal} unrecognized by backend market routing; recovering with default market.`);
+    const recoveredPayload = {
+      ...payload,
+      Postal: "78233",
+      Notes: `[Entered ZIP: ${payload.Postal}] | ${payload.Notes}`
+    };
+    result = await deliver(recoveredPayload);
+  }
+
+  delivered = result.ok;
+  responseData = result.data || null;
 
   // Always store locally in localStorage as a resilient audit log & backup
   try {
